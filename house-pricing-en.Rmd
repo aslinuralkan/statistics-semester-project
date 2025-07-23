@@ -1,0 +1,231 @@
+---
+title: "House Pricing"
+author: "Aslınur Alkan"
+date: "2025-07-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+In this report we perform exploratory and statistical analysis on a random sample of 30 observations from the Ames Housing dataset.  The data are read from **AmesHousing.csv** and pre‑processed before analysis.  The report covers distribution of sale prices, measures of central tendency and variation, normality tests, confidence intervals, hypothesis tests, correlation, regression and other classical statistical methods.
+
+## Code and Analysis
+
+The following R code block reads the Ames Housing dataset, selects relevant features, draws a random sample, and performs various statistical analyses.  Inline comments explain what each section does.  All required packages are loaded at the beginning of the chunk.
+
+```{r analysis, echo=TRUE}
+# Load required packages
+library(readr)
+library(dplyr)
+library(e1071)
+
+# Read the dataset
+AmesHousing <- read_csv("~/Downloads/AmesHousing.csv")
+
+# Select features
+housing_small <- AmesHousing %>%
+  select(
+    SalePrice,            # sale price
+    `Gr Liv Area`,        # living area
+    `TotRms AbvGrd`,      # total number of rooms
+    `Year Built`,         # year built
+    `Overall Qual`,       # overall quality
+    `House Style`,        # house type
+    Neighborhood,         # neighborhood
+    `Garage Cars`,        # garage capacity
+    `Full Bath`           # number of bathrooms
+  )
+
+# Select 30 random samples
+set.seed(42)
+housing_sample <- housing_small %>% sample_n(30)
+write.csv(housing_sample, "housing_sample_30.csv", row.names = FALSE)
+
+### 3- Frequency Distributions
+
+# Number of classes (Sturges' rule)
+n <- nrow(housing_sample)
+k <- ceiling(1 + 3.3 * log10(n))
+cat("Appropriate number of classes:", k, "\n")
+
+# Price range and class width
+range_sp <- range(housing_sample$SalePrice)
+range_value <- diff(range_sp)
+width <- ceiling(range_value / k)
+breaks <- seq(range_sp[1], range_sp[2] + width, by = width)
+
+# Histogram and frequency polygon
+hist(housing_sample$SalePrice,
+     breaks = breaks,
+     main = "Histogram of Sale Prices",
+     xlab = "Sale Price",
+     col = "blue")
+
+hist_data <- hist(housing_sample$SalePrice, breaks = breaks, plot = FALSE)
+midpoints <- hist_data$mids
+counts <- hist_data$counts
+plot(midpoints, counts,
+     type = "o",
+     col = "red",
+     main = "Frequency Polygon of Sale Prices",
+     xlab = "Sale Price",
+     ylab = "Frequency")
+
+### 4- Data Description
+
+# Measures of central tendency
+mean_price <- mean(housing_sample$SalePrice)
+median_price <- median(housing_sample$SalePrice)
+estimated_mode <- midpoints[which.max(counts)]
+cat("Mean:", mean_price, "\n")
+cat("Median:", median_price, "\n")
+cat("Estimated Mode from histogram:", estimated_mode, "\n")
+
+# Measures of variation
+sd_price <- sd(housing_sample$SalePrice)
+cv_price <- sd_price / mean_price
+cat("Standard deviation:", sd_price, "\n")
+cat("Coefficient of Variation:", cv_price, "\n")
+
+# Measures of position
+z_scores <- scale(housing_sample$SalePrice)
+quantile(housing_sample$SalePrice, probs = seq(0, 1, 0.1))
+summary(housing_sample$SalePrice)
+quartiles <- quantile(housing_sample$SalePrice, probs = c(0.25, 0.5, 0.75))
+boxplot(housing_sample$SalePrice,
+        main = "Boxplot of Sale Prices",
+        ylab = "Sale Price",
+        col = "pink")
+
+# Outliers
+box_stats <- boxplot.stats(housing_sample$SalePrice)
+outliers <- box_stats$out
+cat("Outliers:", outliers, "\n")
+
+### 5- Normal Distribution
+
+hist(housing_sample$SalePrice,
+     breaks = breaks,
+     probability = TRUE,
+     col = "lightblue",
+     main = "Histogram of Sale Prices with Normal Curve",
+     xlab = "Sale Price")
+curve(dnorm(x, mean = mean_price, sd = sd_price),
+      col = "darkblue",
+      lwd = 2,
+      add = TRUE)
+
+shapiro_test <- shapiro.test(housing_sample$SalePrice)
+shapiro_test
+skewness(housing_sample$SalePrice)
+
+# Central Limit Theorem example
+set.seed(42)
+sample_means <- replicate(1000, {
+  sample <- sample(housing_small$SalePrice, size = 30, replace = TRUE)
+  mean(sample)
+})
+hist(sample_means,
+     probability = TRUE,
+     main = "Sample Means Histogram (Central Limit Theorem)",
+     xlab = "Sample Means",
+     col = "blue")
+curve(dnorm(x, mean = mean(sample_means), sd = sd(sample_means)),
+      add = TRUE,
+      col = "red",
+      lwd = 2)
+
+### 6- Confidence Intervals & Sampling Size
+
+df <- n - 1
+t_calculated <- qt(0.975, df)
+error_margin <- qt(0.975, df) * sd_price / sqrt(n)
+lower_bound <- mean_price - error_margin
+upper_bound <- mean_price + error_margin
+
+p_hat <- mean(housing_sample$`Garage Cars` >= 1)
+z <- qnorm(0.975)
+error_prop <- z * sqrt((p_hat * (1 - p_hat)) / n)
+ci_prop <- c(p_hat - error_prop, p_hat + error_prop)
+
+cat("95% confidence interval for mean sale price:\n")
+cat("[", lower_bound, ",", upper_bound, "]\n")
+cat("95% Confidence Interval for Proportion of Houses with Garage:", ci_prop , "\n")
+
+### 7- Hypothesis Testing
+
+p_value <- 2 * pt(-abs(t_calculated), df)
+cat("p-value:", p_value, "\n")
+mu_0 <- 200000
+t_critical <- qt(1 - 0.05 / 2, df)
+cat("Test Statistic (t_calculated):", t_calculated, "\n")
+cat("Critical Value (±t):", -t_critical, "to", t_critical, "\n")
+
+### 8- Testing the Difference Between Two Means
+
+subset_data <- housing_sample %>%
+  filter(`House Style` %in% c("1Story", "2Story"))
+t.test(SalePrice ~ `House Style`, data = subset_data)
+garage_table <- table(subset_data$`House Style`, subset_data$`Garage Cars` >= 1)
+x1 <- garage_table["1Story", "TRUE"]
+x2 <- garage_table["2Story", "TRUE"]
+n1 <- sum(garage_table["1Story", ])
+n2 <- sum(garage_table["2Story", ])
+prop.test(x = c(x1, x2), n = c(n1, n2))
+var.test(SalePrice ~ `House Style`, data = subset_data)
+
+### 9- Correlation and Regression
+
+correlation <- cor(housing_sample$`Gr Liv Area`, housing_sample$SalePrice)
+correlation
+cor.test(housing_sample$`Gr Liv Area`, housing_sample$SalePrice)
+model <- lm(SalePrice ~ `Gr Liv Area`, data = housing_sample)
+summary(model)
+plot(housing_sample$`Gr Liv Area`, housing_sample$SalePrice,
+     main = "Scatter Plot with Regression Line",
+     xlab = "Gr Liv Area", ylab = "Sale Price",
+     col = "blue", pch = 19)
+abline(model, col = "red", lwd = 2)
+plot(model$residuals,
+     main = "Residual Plot",
+     ylab = "Residuals",
+     xlab = "Observation Index",
+     col = "purple", pch = 16)
+abline(h = 0, col = "red", lty = 2)
+r_squared <- summary(model)$r.squared
+adjusted_r_squared <- summary(model)$adj.r.squared
+standard_error <- summary(model)$sigma
+cat("R-squared:", r_squared, "\n")
+cat("Adjusted R-squared:", adjusted_r_squared, "\n")
+cat("Standard Error of Estimate:", standard_error, "\n")
+
+### 10- Chi-Square Tests
+
+garage_counts <- table(housing_sample$`Garage Cars`)
+chisq.test(garage_counts)
+garage_binary <- ifelse(housing_sample$`Garage Cars` >= 1, "Yes", "No")
+contingency_table <- table(housing_sample$Neighborhood, garage_binary)
+chisq.test(contingency_table)
+
+### 11- Analysis of Variance (ANOVA)
+
+housing_sample$HouseStyle <- as.factor(housing_sample$`House Style`)
+oneway <- aov(SalePrice ~ HouseStyle, data = housing_sample)
+summary(oneway)
+TukeyHSD(oneway)
+
+### 12- Non‑parametric Tests
+
+spearman <- cor.test(housing_sample$`Gr Liv Area`, housing_sample$SalePrice, method = "spearman")
+spearman
+wilcox <- wilcox.test(housing_sample$`Gr Liv Area`, housing_sample$`TotRms AbvGrd`, paired = TRUE)
+wilcox
+```
+
+## Conclusion
+
+The analysis above explores the distribution of sale prices in the Ames Housing sample, calculates measures of central tendency and variation, assesses normality, constructs confidence intervals, performs hypothesis testing, examines the relationship between living area and sale price via simple linear regression, and applies chi‑square, ANOVA and non‑parametric tests where appropriate.  These results provide a comprehensive statistical overview of the selected housing data.
